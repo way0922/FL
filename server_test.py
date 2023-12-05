@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import recall_score
-
+import csv,os
 '''
 Step 1. Build Global Model (建立全域模型)
 '''
@@ -59,22 +59,23 @@ def main() -> None:
     optimizer = Adam(learning_rate=learning_rate)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
-
+    csv_filename = 'D:/flower_test/server_accuracy/evaluation_results.csv'
+    os.makedirs(os.path.dirname(csv_filename), exist_ok=True)
     # Create strategy
     strategy = fl.server.strategy.FedAvg(
         fraction_fit=0.5, # 每一輪參與Training的Client比例
         fraction_eval=0.5, # 每一輪參與Evaluating的Client比例
-        min_fit_clients=5, # 每一輪參與Training的最少Client連線數量 (與比例衝突時,以此為準)
-        min_eval_clients=5, # 每一輪參與Evaluating的最少Client連線數量 (與比例衝突時,以此為準)
-        min_available_clients=5, # 啟動聯合學習之前，Client連線的最小數量
+        min_fit_clients=2, # 每一輪參與Training的最少Client連線數量 (與比例衝突時,以此為準)
+        min_eval_clients=2, # 每一輪參與Evaluating的最少Client連線數量 (與比例衝突時,以此為準)
+        min_available_clients=2, # 啟動聯合學習之前，Client連線的最小數量
         on_fit_config_fn=fit_config, # 設定 Client-side Training Hyperparameter  
         on_evaluate_config_fn=evaluate_config, # 設定 Client-side Evaluating Hyperparameter
-        eval_fn=get_eval_fn(model, x_test, y_test), # 設定 Server-side Evaluating Hyperparameter (用Global Dataset進行評估)
+        eval_fn=get_eval_fn(model, x_test, y_test,csv_filename), # 設定 Server-side Evaluating Hyperparameter (用Global Dataset進行評估)
         initial_parameters=fl.common.weights_to_parameters(model.get_weights()), # Global Model 初始參數設定
     )
 
     # Start Flower server for four rounds of federated learning
-    fl.server.start_server(server_address="0.0.0.0:8080", config={"num_rounds": 10}, strategy=strategy) #windows
+    fl.server.start_server(server_address="0.0.0.0:8080", config={"num_rounds": 5}, strategy=strategy) #windows
 
 '''
 [Model Hyperparameter](Client-side, train strategy)
@@ -110,9 +111,9 @@ def evaluate_config(rnd: int):
 [Model Hyperparameter](Server-side, evaluate strategy) 
 用 Global Dataset 評估 Global model (不含訓練)
 '''
-import csv
 
-def get_eval_fn(model, x_test, y_test, csv_filename='evaluation_results.csv'):
+
+def get_eval_fn(model, x_test, y_test, csv_filename):
     # Initialize a counter for the round number
     round_counter = 0
 
