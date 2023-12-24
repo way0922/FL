@@ -2,40 +2,71 @@ import pandas as pd
 import numpy as np
 import os
 
-# Set the path for your input dataset and output location
-input_path = 'D:/flower_test/data_10000/minmax-train - radom_onehot_label.csv'
-output_folder = 'D:/flower_test/Quantity skew/beta=21'
+# Set the data set location
+data_path = 'D:/flower_test/data_10000/minmax-train - radom_onehot_label.csv'
 
-# Create the output folder if it doesn't exist
-os.makedirs(output_folder, exist_ok=True)
+# Set the output location
+output_path = 'D:/flower_test/Quantity skew/beta=21'
+
+# Create output directory if it doesn't exist
+os.makedirs(output_path, exist_ok=True)
 
 # Load the dataset
-dataset = pd.read_csv(input_path)
+dataset = pd.read_csv(data_path)
 
-# Define the number of clients and the beta parameter for quantity skew
+# Define the number of clients
 num_clients = 5
+
+# Define the skewness parameter (beta)
 beta = 21
 
-# Ensure the dataset has the 'Label_' columns
-label_columns = [col for col in dataset.columns if col.startswith('Label_')]
+# Function to distribute data with quantity skew
+def distribute_quantity_skew(data, num_clients, beta):
+    # Calculate the total number of records
+    total_records = len(data)
 
-# Calculate the number of records each client should get
-total_records = len(dataset)
-records_per_client = np.random.dirichlet([beta] * num_clients) * total_records
+    # Initialize empty lists to store data for each client
+    clients_data = [[] for _ in range(num_clients)]
 
-# Round the records to integers
-records_per_client = np.round(records_per_client).astype(int)
+    # Define weights for each client
+    client_weights = np.random.dirichlet(np.ones(num_clients) * beta)
 
-# Create a directory for each client
+    # Iterate over labels starting with "Label_"
+    label_columns = [col for col in data.columns if col.startswith("Label_")]
+    for label_column in label_columns:
+        # Calculate the number of records for each client based on the label count
+        label_data = data[data[label_column] == 1]
+        label_count = len(label_data)
+
+        # Calculate the target number of records for each client for this label
+        target_counts = np.floor(client_weights * label_count).astype(int)
+
+        # Adjust one client's count to match the total number of records for this label
+        target_counts[-1] += label_count - sum(target_counts)
+
+        # Distribute the records directly among the clients with skew for this label
+        for i in range(num_clients):
+            client_records = target_counts[i]
+
+            # Add records to the corresponding client's data
+            clients_data[i].extend(label_data.sample(client_records, replace=True).index)
+
+    # Concatenate data for each client
+    for i in range(num_clients):
+        clients_data[i] = data.loc[clients_data[i]]
+
+    # Ensure the total number of records is the same before and after distribution
+    total_records_after_distribution = sum(len(client) for client in clients_data)
+    print(f"Total Records Before Distribution: {total_records}")
+    print(f"Total Records After Distribution: {total_records_after_distribution}")
+    assert total_records == total_records_after_distribution, "Total records mismatch after distribution"
+
+    return clients_data
+
+# Distribute data with quantity skew
+clients_data = distribute_quantity_skew(dataset, num_clients, beta)
+
+# Save data for each client
 for i in range(num_clients):
-    client_folder = os.path.join(output_folder, f'client_{i + 1}')
-    os.makedirs(client_folder, exist_ok=True)
-
-    # Sample the records for the current client
-    sampled_records = dataset.sample(n=records_per_client[i], replace=False, random_state=i)
-
-    # Save the sampled records to the client's folder
-    output_path = os.path.join(client_folder, f'Quantity skew_data_client_{i + 1}.csv')
-    sampled_records.to_csv(output_path, index=False)
-
-print("Data distribution with quantity skew completed.")
+    output_file = os.path.join(output_path, f'client_{i + 1}_data.csv')
+    clients_data[i].to_csv(output_file, index=False)
